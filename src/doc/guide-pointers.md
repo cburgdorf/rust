@@ -5,408 +5,423 @@ are also one of the more confusing topics for newcomers to Rust. They can also
 be confusing for people coming from other languages that support pointers, such
 as C++. This guide will help you understand this important topic.
 
-# You don't actually need pointers, use references
+# An introduction
 
-I have good news for you: you probably don't need to care about pointers,
-especially as you're getting started. Think of it this way: Rust is a language
-that emphasizes safety. Pointers, as the joke goes, are very pointy: it's easy
-to accidentally stab yourself. Therefore, Rust is made in a way such that you
-don't need them very often.
+If you aren't familiar with the concept of pointers, here's a quick refresher.
+Pointers are a very fundamental concept in systems programming languages, so it's
+important to understand them.
 
-"But guide!" you may cry. "My co-worker wrote a function that looks like this:
+## Pointer Basics
 
-~~~rust
-fn succ(x: &int) -> int { *x + 1 }
-~~~
+When you create a new variable binding, you're giving a name to a particular
+place in memory. Like this:
 
-So I wrote this code to try it out:
+```{rust}
+let x = 5i;
+let y = 8i;
+```
+```{notrust,ignore}
+location  value
+--------  -----
+0xd3e010  5
+0xd3e030  8
+```
 
-~~~rust{.ignore}
-fn main() {
-    let number = 5;
-    let succ_number = succ(number);
-    println!("{}", succ_number);
-}
-~~~
+We're making up memory locations here, they're just sample values. Anyway, the
+point is that `x`, the name we're using for our variable, corresponds to the
+memory location `0xd3e010`, and the value stored in that place in memory is
+`5`. When we refer to `x`, we get the value at its location. Hence, `x` is `5`.
 
-And now I get an error:
+Let's introduce a pointer. In some languages, there is just one type of
+'pointer,' but in Rust, we have many types. In this case, we'll use a Rust
+**reference**, which is the simplest kind of pointer.
 
-~~~text
-error: mismatched types: expected `&int` but found `<generic integer #0>` (expected &-ptr but found integral variable)
-~~~
+```{rust}
+let x = 5i;
+let y = 8i;
+let z = &y;
+```
+```{notrust,ignore}
+location  value
+--------  -----
+0xd3e010  5
+0xd3e030  8
+0xd3e050  0xd3e030
+```
 
-What gives? It needs a pointer! Therefore I have to use pointers!"
+See the difference? Rather than contain a value, the value of a pointer is a
+location in memory. In this case, the location of `y`. `x` and `y` have the
+type `int`, but `z` has the type `&int`. We can print this location using the
+`{:p}` format string:
 
-Turns out, you don't. All you need is a reference. Try this on for size:
+```{rust}
+let x = 5i;
+let y = 8i;
+let z = &y;
 
-~~~rust
-# fn succ(x: &int) -> int { *x + 1 }
-fn main() {
-    let number = 5;
-    let succ_number = succ(&number);
-    println!("{}", succ_number);
-}
-~~~
+println!("{:p}", z);
+```
 
-It's that easy! One extra little `&` there. This code will run, and print `6`.
+This would print `0xd3e030`, with our fictional memory addresses.
 
-That's all you need to know. Your co-worker could have written the function
-like this:
+Because `int` and `&int` are different types, we can't, for example, add them
+together:
 
-~~~rust
-fn succ(x: int) -> int { x + 1 }
+```{rust,ignore}
+let x = 5i;
+let y = 8i;
+let z = &y;
 
-fn main() {
-    let number = 5;
-    let succ_number = succ(number);
-    println!("{}", succ_number);
-}
-~~~
+println!("{}", x + z);
+```
 
-No pointers even needed. Then again, this is a simple example. I assume that
-your real-world `succ` function is more complicated, and maybe your co-worker
-had a good reason for `x` to be a pointer of some kind. In that case, references
-are your best friend. Don't worry about it, life is too short.
+This gives us an error:
 
-However.
+```{notrust,ignore}
+hello.rs:6:24: 6:25 error: mismatched types: expected `int` but found `&int` (expected int but found &-ptr)
+hello.rs:6     println!("{}", x + z);
+                                  ^
+```
 
-Here are the use-cases for pointers. I've prefixed them with the name of the
-pointer that satisfies that use-case:
+We can **dereference** the pointer by using the `*` operator. This will work:
 
-1. Owned: `Box<Trait>` must be a pointer, because you don't know the size of the
-object, so indirection is mandatory.
+```{rust}
+let x = 5i;
+let y = 8i;
+let z = &y;
 
-2. Owned: You need a recursive data structure. These can be infinite sized, so
-indirection is mandatory.
+println!("{}", x + *z);
+```
 
-3. Owned: A very, very, very rare situation in which you have a *huge* chunk of
-data that you wish to pass to many methods. Passing a pointer will make this
-more efficient. If you're coming from another language where this technique is
-common, such as C++, please read "A note..." below.
+It prints `13`.
 
-4. Reference: You're writing a function, and you need a pointer, but you don't
-care about its ownership. If you make the argument a reference, callers
-can send in whatever kind they want.
+That's it! That's all pointers are: they point to some memory location. Not
+much else to them. Now that we've discussed the 'what' of pointers, let's
+talk about the 'why.'
 
-5. Shared: You need to share data among tasks. You can achieve that via the
-`Rc` and `Arc` types.
+## Pointer uses
 
-Five exceptions. That's it. Otherwise, you shouldn't need them. Be sceptical
-of pointers in Rust: use them for a deliberate purpose, not just to make the
-compiler happy.
+Rust's pointers are quite useful, but in different ways than in other systems
+languages. We'll talk about best practices for Rust pointers later in
+the guide, but here are some ways that pointers are useful in other languages:
 
-## A note for those proficient in pointers
+In C, strings are a pointer to a list of `char`acters, ending with a null byte.
+The only way to use strings is to get quite familiar with pointers.
 
-If you're coming to Rust from a language like C or C++, you may be used to
-passing things by reference, or passing things by pointer. In some languages,
-like Java, you can't even have objects without a pointer to them. Therefore, if
-you were writing this Rust code:
+Pointers are useful to point to memory locations that are not on the stack. For
+example, our example used two stack variables, so we were able to give them
+names. But if we allocated some heap memory, we wouldn't have that name
+available.  In C, `malloc` is used to allocate heap memory, and it returns a
+pointer.
 
-~~~rust
-# fn transform(p: Point) -> Point { p }
-#[deriving(Show)]
-struct Point {
-    x: int,
-    y: int,
-}
+As a more general variant of the previous two points, any time you have a
+structure that can change in size, you need a pointer. You can't tell at
+compile time how much memory to allocate, so you've gotta use a pointer to
+point at the memory where it will be allocated, and deal with it at run time.
 
-fn main() {
-    let p0 = Point { x: 5, y: 10};
-    let p1 = transform(p0);
-    println!("{}", p1);
-}
+Pointers are useful in languages that are pass-by-value, rather than
+pass-by-reference. Basically, languages can make two choices (this is made
+up syntax, it's not Rust):
 
-~~~
-
-I think you'd implement `transform` like this:
-
-~~~rust
-# struct Point {
-#     x: int,
-#     y: int,
-# }
-# let p0 = Point { x: 5, y: 10};
-fn transform(p: &Point) -> Point {
-    Point { x: p.x + 1, y: p.y + 1}
-}
-
-// and change this:
-let p1 = transform(&p0);
-~~~
-
-This does work, but you don't need to create those references! The better way to write this is simply:
-
-~~~rust
-#[deriving(Show)]
-struct Point {
-    x: int,
-    y: int,
-}
-
-fn transform(p: Point) -> Point {
-    Point { x: p.x + 1, y: p.y + 1}
+```{notrust,ignore}
+fn foo(x) {
+    x = 5
 }
 
 fn main() {
-    let p0 = Point { x: 5, y: 10};
-    let p1 = transform(p0);
-    println!("{}", p1);
+    i = 1
+    foo(i)
+    // what is the value of i here?
 }
-~~~
+```
 
-But won't this be inefficient? Well, that's a complicated question, but it's
-important to know that Rust, like C and C++, store aggregate data types
-'unboxed,' whereas languages like Java and Ruby store these types as 'boxed.'
-For smaller structs, this way will be more efficient. For larger ones, it may
-be less so. But don't reach for that pointer until you must! Make sure that the
-struct is large enough by performing some tests before you add in the
-complexity of pointers.
+In languages that are pass-by-value, `foo` will get a copy of `i`, and so
+the original version of `i` is not modified. At the comment, `i` will still be
+`1`. In a language that is pass-by-reference, `foo` will get a reference to `i`,
+and therefore, can change its value. At the comment, `i` will be `5`.
 
-# Owned Pointers
+So what do pointers have to do with this? Well, since pointers point to a
+location in memory...
 
-Owned pointers are the conceptually simplest kind of pointer in Rust. A rough
-approximation of owned pointers follows:
-
-1. Only one owned pointer may exist to a particular place in memory. It may be
-borrowed from that owner, however.
-
-2. The Rust compiler uses static analysis to determine where the pointer is in
-scope, and handles allocating and de-allocating that memory. Owned pointers are
-not garbage collected.
-
-These two properties make for three use cases.
-
-## References to Traits
-
-Traits must be referenced through a pointer, because the struct that implements
-the trait may be a different size than a different struct that implements the
-trait. Therefore, unboxed traits don't make any sense, and aren't allowed.
-
-## Recursive Data Structures
-
-Sometimes, you need a recursive data structure. The simplest is known as a 'cons list':
-
-~~~rust
-#[deriving(Show)]
-enum List<T> {
-    Nil,
-    Cons(T, Box<List<T>>),
+```{notrust,ignore}
+fn foo(&int x) {
+    *x = 5
 }
 
 fn main() {
-    let list: List<int> = Cons(1, box Cons(2, box Cons(3, box Nil)));
-    println!("{}", list);
+    i = 1
+    foo(&i)
+    // what is the value of i here?
 }
-~~~
+```
 
-This prints:
+Even in a language which is pass by value, `i` will be `5` at the comment. You
+see, because the argument `x` is a pointer, we do send a copy over to `foo`,
+but because it points at a memory location, which we then assign to, the
+original value is still changed. This pattern is called
+'pass-reference-by-value.' Tricky!
 
-~~~text
-Cons(1, box Cons(2, box Cons(3, box Nil)))
-~~~
+## Common pointer problems
 
-The inner lists _must_ be an owned pointer, because we can't know how many
-elements are in the list. Without knowing the length, we don't know the size,
-and therefore require the indirection that pointers offer.
+We've talked about pointers, and we've sung their praises. So what's the
+downside? Well, Rust attempts to mitigate each of these kinds of problems,
+but here are problems with pointers in other languages:
 
-## Efficiency
+Uninitialized pointers can cause a problem. For example, what does this program
+do?
 
-This should almost never be a concern, but because creating an owned pointer
-boxes its value, it therefore makes referring to the value the size of the box.
-This may make passing an owned pointer to a function less expensive than
-passing the value itself. Don't worry yourself with this case until you've
-proved that it's an issue through benchmarks.
+```{notrust,ignore}
+&int x;
+*x = 5; // whoops!
+```
 
-For example, this will work:
+Who knows? We just declare a pointer, but don't point it at anything, and then
+set the memory location that it points at to be `5`. But which location? Nobody
+knows. This might be harmless, and it might be catastrophic.
 
-~~~rust
-struct Point {
-    x: int,
-    y: int,
-}
+When you combine pointers and functions, it's easy to accidentally invalidate
+the memory the pointer is pointing to. For example:
 
-fn main() {
-    let a = Point { x: 10, y: 20 };
-    spawn(proc() {
-        println!("{}", a.x);
-    });
-}
-~~~
+```{notrust,ignore}
+fn make_pointer(): &int {
+    x = 5;
 
-This struct is tiny, so it's fine. If `Point` were large, this would be more
-efficient:
-
-~~~rust
-struct Point {
-    x: int,
-    y: int,
+    return &x;
 }
 
 fn main() {
-    let a = box Point { x: 10, y: 20 };
-    spawn(proc() {
-        println!("{}", a.x);
-    });
+    &int i = make_pointer();
+    *i = 5; // uh oh!
 }
-~~~
+```
 
-Now it'll be copying a pointer-sized chunk of memory rather than the whole
-struct.
+`x` is local to the `make_pointer` function, and therefore, is invalid as soon
+as `make_pointer` returns. But we return a pointer to its memory location, and
+so back in `main`, we try to use that pointer, and it's a very similar
+situation to our first one. Setting invalid memory locations is bad.
+
+As one last example of a big problem with pointers, **aliasing** can be an
+issue. Two pointers are said to alias when they point at the same location
+in memory. Like this:
+
+```{notrust,ignore}
+fn mutate(&int i, int j) {
+    *i = j;
+}
+
+fn main() {
+  x = 5;
+  y = &x;
+  z = &x; //y and z are aliased
+
+
+  run_in_new_thread(mutate, y, 1);
+  run_in_new_thread(mutate, z, 100);
+
+  // what is the value of x here?
+}
+```
+
+In this made-up example, `run_in_new_thread` spins up a new thread, and calls
+the given function name with its arguments. Since we have two threads, and
+they're both operating on aliases to `x`, we can't tell which one finishes
+first, and therefore, the value of `x` is actually non-deterministic. Worse,
+what if one of them had invalidated the memory location they pointed to? We'd
+have the same problem as before, where we'd be setting an invalid location.
+
+## Conclusion
+
+That's a basic overview of pointers as a general concept. As we alluded to
+before, Rust has different kinds of pointers, rather than just one, and
+mitigates all of the problems that we talked about, too. This does mean that
+Rust pointers are slightly more complicated than in other languages, but
+it's worth it to not have the problems that simple pointers have.
 
 # References
 
-References are the third major kind of pointer Rust supports. They are
-simultaneously the simplest and the most complicated kind. Let me explain:
-references are considered 'borrowed' because they claim no ownership over the
-data they're pointing to. They're just borrowing it for a while. So in that
-sense, they're simple: just keep whatever ownership the data already has. For
-example:
+The most basic type of pointer that Rust has is called a 'reference.' Rust
+references look like this:
 
-~~~rust
-struct Point {
-    x: f32,
-    y: f32,
-}
+```{rust}
+let x = 5i;
+let y = &x;
 
-fn compute_distance(p1: &Point, p2: &Point) -> f32 {
-    let x_d = p1.x - p2.x;
-    let y_d = p1.y - p2.y;
+println!("{}", *y);
+println!("{:p}", y);
+println!("{}", y);
+```
 
-    (x_d * x_d + y_d * y_d).sqrt()
-}
+We'd say "`y` is a reference to `x`." The first `println!` prints out the
+value of `y`'s referent by using the dereference operator, `*`. The second
+one prints out the memory location that `y` points to, by using the pointer
+format string. The third `println!` *also* prints out the value of `y`'s
+referent, because `println!` will automatically dereference it for us.
+
+Here's a function that takes a reference:
+
+```{rust}
+fn succ(x: &int) -> int { *x + 1 }
+```
+
+You can also use `&` as an operator to create a reference, so we can
+call this function in two different ways:
+
+```{rust}
+fn succ(x: &int) -> int { *x + 1 }
 
 fn main() {
-    let origin =    &Point { x: 0.0, y: 0.0 };
-    let p1     = box Point { x: 5.0, y: 3.0 };
 
-    println!("{}", compute_distance(origin, &*p1));
+    let x = 5i;
+    let y = &x;
+
+    println!("{}", succ(y));
+    println!("{}", succ(&x));
 }
-~~~
+```
 
-This prints `5.83095189`. You can see that the `compute_distance` function
-takes in two references, a reference to a value on the stack, and a reference
-to a value in a box.
-Of course, if this were a real program, we wouldn't have any of these pointers,
-they're just there to demonstrate the concepts.
+Both of these `println!`s will print out `6`.
 
-So how is this hard? Well, because we're ignoring ownership, the compiler needs
-to take great care to make sure that everything is safe. Despite their complete
-safety, a reference's representation at runtime is the same as that of
-an ordinary pointer in a C program. They introduce zero overhead. The compiler
-does all safety checks at compile time.
+Of course, if this were real code, we wouldn't bother with the reference, and
+just write:
 
-This theory is called 'region pointers' and you can read more about it
-[here](http://www.cs.umd.edu/projects/cyclone/papers/cyclone-regions.pdf).
-Region pointers evolved into what we know today as 'lifetimes'.
+```{rust}
+fn succ(x: int) -> int { x + 1 }
+```
 
-Here's the simple explanation: would you expect this code to compile?
+References are immutable by default:
 
-~~~rust{.ignore}
+```{rust,no_run}
+let x = 5i;
+let y = &x;
+
+*y = 5; // error: cannot assign to immutable dereference of `&`-pointer `*y`
+```
+
+They can be made mutable with `mut`, but only if its referent is also mutable.
+This works:
+
+```{rust}
+let mut x = 5i;
+let y = &mut x;
+```
+
+This does not:
+
+```{rust,no_run}
+let x = 5i;
+let y = &mut x; // error: cannot borrow immutable local variable `x` as mutable
+```
+
+Immutable pointers are allowed to alias:
+
+```{rust}
+let x = 5i;
+let y = &x;
+let z = &x;
+```
+
+Mutable ones, however, are not:
+
+```{rust,no_run}
+let x = 5i;
+let y = &mut x;
+let z = &mut x; // error: cannot borrow `x` as mutable more than once at a time
+```
+
+## Best practices
+
+In general, prefer stack allocation over heap allocation. Using references to
+stack allocated information is preferred whenever possible. Therefore,
+references are the default pointer type you should use, unless you have
+specific reason to use a different type. The other types of pointers cover when
+they're appropriate to use in their own best practices sections.
+
+Use references when you want to use a pointer, but do not want to take ownership.
+References just borrow ownership, which is more polite if you don't need the
+ownership. In other words, prefer:
+
+```{rust}
+fn succ(x: &int) -> int { *x + 1 }
+```
+
+to
+
+```{rust}
+fn succ(x: Box<int>) -> int { *x + 1 }
+```
+
+As a corollary to that rule, references allow you to accept a wide variety of
+other pointers, and so are useful so that you don't have to write a number
+of variants per pointer. In other words, prefer:
+
+```{rust}
+fn succ(x: &int) -> int { *x + 1 }
+```
+
+to
+
+```{rust}
+fn box_succ(x: Box<int>) -> int { *x + 1 }
+
+fn gc_succ(x: std::gc::Gc<int>) -> int { *x + 1 }
+```
+
+Because it doesn't matter to your caller:
+
+```{rust}
+fn succ(x: &int) -> int { *x + 1 }
+
 fn main() {
-    println!("{}", x);
-    let x = 5;
+
+    let x = box 5i;
+    let y = box(std::gc::GC) 5i;
+
+    println!("{}", succ(&*x));
+    println!("{}", succ(&*y));
 }
-~~~
+```
 
-Probably not. That's because you know that the name `x` is valid from where
-it's declared to when it goes out of scope. In this case, that's the end of
-the `main` function. So you know this code will cause an error. We call this
-duration a 'lifetime'. Let's try a more complex example:
+The `&*` construction first dereferences the value inside the `Box<T>` or `Gc<T>`,
+and then the `&` creates a reference.
 
-~~~rust
-fn main() {
-    let mut x = box 5i;
-    if *x < 10 {
-        let y = &x;
-        println!("Oh no: {}", y);
-        return;
-    }
-    *x -= 1;
-    println!("Oh no: {}", x);
-}
-~~~
+# Boxes
 
-Here, we're borrowing a pointer to `x` inside of the `if`. The compiler, however,
-is able to determine that that pointer will go out of scope without `x` being
-mutated, and therefore, lets us pass. This wouldn't work:
+`Box<T>` is Rust's 'boxed pointer' type. Boxes provide the simplest form of
+heap allocation in Rust. Creating a box looks like this:
 
-~~~rust{.ignore}
-fn main() {
-    let mut x = box 5i;
-    if *x < 10 {
-        let y = &x;
-        *x -= 1;
+```{rust}
+let x = box(std::boxed::HEAP) 5i;
+```
 
-        println!("Oh no: {}", y);
-        return;
-    }
-    *x -= 1;
-    println!("Oh no: {}", x);
-}
-~~~
+`box` is a keyword that does 'placement new,' which we'll talk about in a bit.
+`box` will be useful for creating a number of heap-allocated types, but is not
+quite finished yet. In the meantime, `box`'s type defaults to `std::boxed::HEAP`,
+and so you can leave it off:
 
-It gives this error:
+```{rust}
+let x = box 5i;
+```
 
-~~~text
-test.rs:5:8: 5:10 error: cannot assign to `*x` because it is borrowed
-test.rs:5         *x -= 1;
-                  ^~
-test.rs:4:16: 4:18 note: borrow of `*x` occurs here
-test.rs:4         let y = &x;
-                          ^~
-~~~
+# Best practices
 
-As you might guess, this kind of analysis is complex for a human, and therefore
-hard for a computer, too! There is an entire [guide devoted to references
-and lifetimes](guide-lifetimes.html) that goes into lifetimes in
-great detail, so if you want the full details, check that out.
+# Shared Ownership Pointer types
+
+## Best practices
 
 # Returning Pointers
 
-We've talked a lot about functions that accept various kinds of pointers, but
-what about returning them? In general, it is better to let the caller decide
-how to use a function's output, instead of assuming a certain type of pointer
-is best.
+## Best practices
 
-What does that mean? Don't do this:
+# Creating your own Pointers
 
-~~~rust
-fn foo(x: Box<int>) -> Box<int> {
-    return box *x;
-}
+This part is coming soon.
 
-fn main() {
-    let x = box 5;
-    let y = foo(x);
-}
-~~~
+## Best practices
 
-Do this:
+This part is coming soon.
 
-~~~rust
-fn foo(x: Box<int>) -> int {
-    return *x;
-}
+# Related resources
 
-fn main() {
-    let x = box 5;
-    let y = box foo(x);
-}
-~~~
-
-This gives you flexibility, without sacrificing performance.
-
-You may think that this gives us terrible performance: return a value and then
-immediately box it up ?! Isn't that the worst of both worlds? Rust is smarter
-than that. There is no copy in this code. `main` allocates enough room for the
-`box int`, passes a pointer to that memory into `foo` as `x`, and then `foo` writes
-the value straight into that pointer. This writes the return value directly into
-the allocated box.
-
-This is important enough that it bears repeating: pointers are not for optimizing
-returning values from your code. Allow the caller to choose how they want to
-use your output.
-
-# Related Resources
-
+* [API documentation for Box](std/boxed/index.html)
 * [Lifetimes guide](guide-lifetimes.html)
+
